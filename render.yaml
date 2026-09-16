@@ -5,7 +5,13 @@ services:
     rootDir: backend
     buildCommand: npm install
     startCommand: npm start
+    disk:
+      name: datastraw-crm-data
+      mountPath: /opt/render/project/src/backend/data
+      sizeGB: 1
     envVars:
+      - key: DB_PATH
+        value: /opt/render/project/src/backend/data/tickets.db
       - key: FRONTEND_ORIGIN
         sync: false
       - key: NODE_VERSION

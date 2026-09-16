@@ -14,7 +14,7 @@ export function listTickets({ status, search } = {}) {
     if (search) {
         conditions.push(`(ticket_id LIKE @search OR customer_name LIKE @search OR customer_email LIKE @search
             OR subject LIKE @search OR title LIKE @search OR description LIKE @search)`);
-        parameters.search = `%${search}%`;
+        parameters.search = `%${search.slice(0, 100)}%`;
     }
     const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
     return database.prepare(`SELECT ${fields} FROM tickets ${where} ORDER BY updated_at DESC`).all(parameters);
@@ -27,16 +27,16 @@ export function findTicket(ticketId) {
 }
 
 export function createTicket({ subject, title, description = '', status = 'open', priority = 'medium', customerName, customer, customerEmail = '' }) {
-    const result = database.prepare(`
-    INSERT INTO tickets (ticket_id, title, subject, description, status, priority, customer, customer_name, customer_email)
-    VALUES (@ticketId, @subject, @subject, @description, @status, @priority, @customerName, @customerName, @customerEmail)
-  `).run({ ticketId: `TKT-${String(nextTicketNumber()).padStart(3, '0')}`, subject: subject || title, description, status, priority, customerName: customerName || customer || '', customerEmail });
-    return findTicket(result.lastInsertRowid);
-}
-
-function nextTicketNumber() {
-    const row = database.prepare("SELECT COALESCE(MAX(CAST(SUBSTR(ticket_id, 5) AS INTEGER)), 0) + 1 AS nextNumber FROM tickets").get();
-    return row.nextNumber;
+    const ticketId = database.transaction(() => {
+        const result = database.prepare(`
+                INSERT INTO tickets (ticket_id, title, subject, description, status, priority, customer, customer_name, customer_email)
+                VALUES (NULL, @subject, @subject, @description, @status, @priority, @customerName, @customerName, @customerEmail)
+            `).run({ subject: subject || title, description, status, priority, customerName: customerName || customer || '', customerEmail });
+        const nextTicketId = `TKT-${String(result.lastInsertRowid).padStart(3, '0')}`;
+        database.prepare('UPDATE tickets SET ticket_id = ? WHERE id = ?').run(nextTicketId, result.lastInsertRowid);
+        return nextTicketId;
+    })();
+    return findTicket(ticketId);
 }
 
 export function updateTicket(id, values) {

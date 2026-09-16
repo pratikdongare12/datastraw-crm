@@ -1,0 +1,5 @@
+node_modules/
+backend/tickets.db*
+.env
+.DS_Store
+dist/

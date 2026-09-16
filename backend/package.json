@@ -5,7 +5,8 @@
     "type": "module",
     "scripts": {
         "dev": "node --watch index.js",
-        "start": "node index.js"
+        "start": "node index.js",
+        "test": "node --test test/tickets.test.js"
     },
     "dependencies": {
         "better-sqlite3": "^11.7.0",
