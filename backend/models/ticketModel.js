@@ -3,6 +3,7 @@ import database from '../db.js';
 const fields = `id, ticket_id AS ticketId, COALESCE(subject, title) AS subject,
     COALESCE(customer_name, customer) AS customerName, customer_email AS customerEmail,
     description, status, priority, created_at AS createdAt, updated_at AS updatedAt`;
+const statusLabels = { open: 'Open', in_progress: 'In progress', resolved: 'Closed' };
 
 export function listTickets({ status, search } = {}) {
     const conditions = [];
@@ -51,13 +52,24 @@ export function updateTicket(id, values) {
         customerName: values.customerName !== undefined ? values.customerName : ticket.customerName,
         customerEmail: values.customerEmail !== undefined ? values.customerEmail : ticket.customerEmail
     };
-    database.prepare(`
-    UPDATE tickets
-    SET title = @subject, subject = @subject, description = @description, status = @status,
-        priority = @priority, customer = @customerName, customer_name = @customerName,
-        customer_email = @customerEmail, updated_at = CURRENT_TIMESTAMP
-    WHERE ticket_id = @ticketId OR id = @ticketId
-  `).run({...next, ticketId: id });
+    database.transaction(() => {
+        database.prepare(`
+        UPDATE tickets
+        SET title = @subject, subject = @subject, description = @description, status = @status,
+            priority = @priority, customer = @customerName, customer_name = @customerName,
+            customer_email = @customerEmail, updated_at = CURRENT_TIMESTAMP
+        WHERE ticket_id = @ticketId OR id = @ticketId
+      `).run({...next, ticketId: id });
+
+        if (next.status !== ticket.status) {
+            const timestamp = database.prepare("SELECT strftime('%Y-%m-%d %H:%M:%S', 'now') AS value").get().value;
+            database.prepare('INSERT INTO notes (ticket_id, note_text, created_at) VALUES (?, ?, ?)').run(
+                ticket.id,
+                `[System] Status changed from ${statusLabels[ticket.status]} to ${statusLabels[next.status]} by Agent at ${timestamp}.`,
+                timestamp
+            );
+        }
+    })();
     return findTicket(id);
 }
 

@@ -80,7 +80,11 @@ test('ticket API validates input and supports the full lifecycle', async() => {
     });
     assert.equal(updated.response.status, 200);
     assert.equal(updated.body.status, 'resolved');
-    assert.equal(updated.body.notes[0].noteText, 'Resolution recorded');
+    assert.ok(updated.body.notes.some((note) => note.noteText === 'Resolution recorded'));
+    const auditNote = updated.body.notes.find((note) => note.noteText.startsWith('[System] Status changed from Open to Closed by Agent at '));
+    assert.ok(auditNote);
+    assert.match(auditNote.noteText, /by Agent at \d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.$/);
+    assert.equal(auditNote.createdAt, auditNote.noteText.slice(-20, -1));
 
     const missing = await request('/tickets/TKT-DOES-NOT-EXIST');
     assert.equal(missing.response.status, 404);
