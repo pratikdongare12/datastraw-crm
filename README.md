@@ -17,6 +17,7 @@ The deployment URL fields are intentionally explicit because this repository doe
 - Create, search, filter, update, and delete support tickets.
 - Search by ticket ID, customer, email, subject, and description.
 - Add persistent internal support notes to tickets.
+- Automatically record status changes in the ticket timeline as system notes.
 - Manage customers with company, phone, service tier, and ticket counts.
 - Track customer orders with status, amount, and customer context.
 - Manage team members with online, away, and offline presence.
@@ -26,17 +27,20 @@ The deployment URL fields are intentionally explicit because this repository doe
 
 ## Architecture
 
-```text
-React/Vercel
-    |
-    v
-Express/Render
-    |
-    v
-SQLite on a Render persistent disk
+```mermaid
+flowchart LR
+    Browser[React frontend\nVercel] -->|VITE_API_URL| API[Express API\nRender]
+    API --> Routes[REST routes\nTickets and CRM]
+    Routes --> Models[Data access models]
+    Models --> DB[(SQLite\nRender persistent disk)]
+    Models --> Notes[(Notes and\naudit trail)]
 ```
 
-The application is intentionally a small monolith for the assignment. It does not use authentication, AI features, microservices, or a complex service layer. SQLite is appropriate for this demonstration because the Render configuration provisions persistent storage. For a larger production workload, the database boundary could later move to PostgreSQL without changing the frontend API contract.
+The application is intentionally a small monolith for the assignment. It does not use authentication, AI features, microservices, or a complex service layer. SQLite is appropriate for this demonstration because the Render configuration provisions persistent storage. For a larger production workload, the database boundary can move to PostgreSQL without changing the frontend API contract.
+
+### Supabase/PostgreSQL migration path
+
+The production schema is also available in [supabase/schema.sql](supabase/schema.sql). It preserves the current API status values (`open`, `in_progress`, and `resolved`) while adding PostgreSQL-managed ticket IDs, timestamps, indexes, row-level security, and the same transactional status audit trail through database triggers. Apply it in the Supabase SQL Editor before switching the API database adapter from SQLite to Supabase.
 
 ```text
 frontend/src/
@@ -75,6 +79,8 @@ The UI label **Closed** intentionally maps to the API/database value `resolved`;
 
 Notes are stored in the `notes` table with a foreign key to `tickets.id`. `GET /api/tickets/:id` includes the ticket's notes, so they remain visible after a page refresh. SQLite foreign keys are enabled and the relationship uses `ON DELETE CASCADE`, so deleting a ticket also deletes its notes.
 
+Status changes append a `[System]` note in the same database transaction as the ticket update. This creates a lightweight audit trail without adding another table or changing the API contract.
+
 ## API Endpoints
 
 ### System and tickets
@@ -99,6 +105,14 @@ Ticket updates accept fields such as `{ status, priority, description, notes }`.
 
 ## Environment Variables
 
+### Backend local setup
+
+Create `backend/.env` from the committed example:
+
+```powershell
+Copy-Item backend/.env.example backend/.env
+```
+
 Backend variables:
 
 ```env
@@ -113,9 +127,19 @@ Frontend variable:
 VITE_API_URL=http://localhost:4000/api
 ```
 
-For production, configure `VITE_API_URL` in Vercel with the deployed backend URL followed by `/api`, for example `https://your-api.onrender.com/api`. Configure `FRONTEND_ORIGIN` in Render with the deployed Vercel origin. The committed `render.yaml` configures `DB_PATH` to a Render persistent disk.
+For production, configure these values in the hosting dashboards rather than committing secrets:
+
+| Service | Variable | Example |
+| --- | --- | --- |
+| Render | `FRONTEND_ORIGIN` | `https://your-crm.vercel.app` |
+| Render | `DB_PATH` | `/opt/render/project/src/backend/data/tickets.db` |
+| Vercel | `VITE_API_URL` | `https://your-api.onrender.com/api` |
+
+The committed `render.yaml` supplies `DB_PATH` and `NODE_VERSION`; set the frontend origin in Render and the API URL in Vercel after both services are deployed.
 
 ## Local Setup
+
+From the repository root:
 
 ```powershell
 npm install --prefix backend
@@ -157,6 +181,17 @@ Set the project root to `frontend`, use the existing `vercel.json`, and configur
 - [ ] Confirm the production frontend can reach the production backend.
 - [ ] Run `npm test --prefix backend`.
 - [ ] Run `npm run build --prefix frontend`.
+
+## Demo Video Outline
+
+Keep the demo between three and four minutes:
+
+1. Show the deployed workspace, create a ticket, search for it while typing, filter by status, and open its detail view.
+2. Update the ticket to **In progress** or **Closed**, add a support note, and refresh the detail view to show persistence.
+3. Briefly walk through `backend/routes/tickets.js`, `backend/models/ticketModel.js`, and `backend/db.js` to explain the API, validation, and relational schema.
+4. Explain the audit trail: status updates write the ticket change and `[System]` note in one transaction. The tradeoff is one additional write per status change, exchanged for accountable history and rollback safety.
+
+For a Supabase/PostgreSQL deployment, show [supabase/schema.sql](supabase/schema.sql) and explain that the database trigger moves the same audit guarantee closer to the data.
 
 ## Development Notes
 
